@@ -1,4 +1,4 @@
-# IntentLens
+# IntentLens- Generative AI USER INTERACTION EXTENSION
 
 Privacy-first Chrome extension (Manifest V3) for multimodal **interaction collection**, **webcam gaze estimation**, **deterministic attention analytics**, an **Attention–Action Mismatch Detector**, and optional **Gemini** interpretation.
 
