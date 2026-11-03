@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "IntentLens",
+  "version": "1.0.0",
+  "description": "Privacy-first attention intelligence: local interaction signals, webcam gaze estimation, and evidence-backed usability hypotheses.",
+  "action": {
+    "default_title": "IntentLens",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_page": "dashboard.html",
+  "permissions": ["storage", "scripting", "tabs", "alarms"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "host_permissions": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"],
+  "web_accessible_resources": [
+    {
+      "resources": ["gaze-frame.html", "gaze-frame.js", "vendor/webgazer.js", "overlay.css"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://127.0.0.1:8787 http://localhost:8787"
+  }
+}

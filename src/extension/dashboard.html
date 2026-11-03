@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>IntentLens Console</title>
+    <link rel="stylesheet" href="dashboard.css" />
+  </head>
+  <body>
+    <aside>
+      <div class="brand">
+        <div class="mark"></div>
+        <div>
+          <strong>IntentLens</strong>
+          <span>Attention Intelligence Console</span>
+        </div>
+      </div>
+      <nav>
+        <button data-panel="overview" class="active">Overview</button>
+        <button data-panel="events">Event inspector</button>
+        <button data-panel="attention">Attention</button>
+        <button data-panel="insights">AI insights</button>
+        <button data-panel="manage">Session</button>
+      </nav>
+      <div class="aside-note">
+        Estimated gaze is not conscious attention. Findings are investigation hypotheses.
+      </div>
+    </aside>
+    <main>
+      <header class="top">
+        <div>
+          <h1 id="panel-title">Session overview</h1>
+          <p id="panel-sub">Live state from local storage — never fabricated.</p>
+        </div>
+        <div class="controls">
+          <button id="start">Start</button>
+          <button id="pause" class="ghost">Pause</button>
+          <button id="resume" class="ghost">Resume</button>
+          <button id="stop" class="danger">Stop</button>
+        </div>
+      </header>
+
+      <section id="overview" class="panel">
+        <div class="grid stats" id="stat-grid"></div>
+        <p class="muted" id="coverage-note"></p>
+      </section>
+
+      <section id="events" class="panel hidden">
+        <div class="toolbar">
+          <input id="event-search" placeholder="Search event or element id" />
+          <select id="event-filter">
+            <option value="">All types</option>
+          </select>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Type</th><th>Element</th><th>Quality</th><th>Event ID</th></tr>
+          </thead>
+          <tbody id="event-rows"></tbody>
+        </table>
+      </section>
+
+      <section id="attention" class="panel hidden">
+        <div class="split">
+          <div>
+            <h2>Gaze samples</h2>
+            <canvas id="gaze-canvas" width="640" height="360"></canvas>
+            <p class="muted">Points are estimated gaze mapped into the recorded viewport. Missing samples are omitted.</p>
+          </div>
+          <div>
+            <h2>Element ranking</h2>
+            <ol id="rank"></ol>
+          </div>
+        </div>
+        <h2>Category dwell share</h2>
+        <div id="cats" class="bars"></div>
+        <h2>Scroll / interaction timeline</h2>
+        <canvas id="time-canvas" width="960" height="120"></canvas>
+      </section>
+
+      <section id="insights" class="panel hidden">
+        <div class="toolbar">
+          <input id="question" placeholder="Ask about this session (interpreted from metrics, not raw page content)" />
+          <button id="ask">Ask Gemini</button>
+        </div>
+        <p id="ai-status" class="muted"></p>
+        <h2>Mismatch findings</h2>
+        <div id="findings"></div>
+        <h2>Model insights</h2>
+        <div id="insights-list"></div>
+      </section>
+
+      <section id="manage" class="panel hidden">
+        <h2>Consent</h2>
+        <label><input type="checkbox" id="c-int" /> Interaction collection</label>
+        <label><input type="checkbox" id="c-gaze" /> Webcam gaze (processed locally)</label>
+        <label><input type="checkbox" id="c-ai" /> Gemini interpretation via local proxy</label>
+        <h2>Proxy</h2>
+        <label>Proxy URL <input id="proxy-url" /></label>
+        <label>Bearer token <input id="proxy-token" type="password" autocomplete="off" /></label>
+        <p class="muted">The Gemini API key belongs only on the proxy machine. It is never stored in this extension.</p>
+        <div class="row">
+          <button id="save-settings">Save settings</button>
+          <button id="export" class="ghost">Export session JSON</button>
+          <button id="delete" class="ghost">Delete current session events</button>
+          <button id="delete-all" class="danger">Delete all local data</button>
+        </div>
+        <h2>Compare archived sessions</h2>
+        <div id="compare"></div>
+      </section>
+    </main>
+    <script src="dashboard.js" type="module"></script>
+  </body>
+</html>

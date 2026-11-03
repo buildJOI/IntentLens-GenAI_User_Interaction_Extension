@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>IntentLens</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div class="mark"></div>
+      <div>
+        <h1>IntentLens</h1>
+        <p class="sub">Attention intelligence</p>
+      </div>
+    </header>
+    <section id="status-card">
+      <dl>
+        <div><dt>Session</dt><dd id="status">idle</dd></div>
+        <div><dt>Elapsed</dt><dd id="elapsed">0s</dd></div>
+        <div><dt>Events</dt><dd id="events">0</dd></div>
+        <div><dt>Coverage</dt><dd id="coverage">n/a</dd></div>
+        <div><dt>Calibration</dt><dd id="cal">not started</dd></div>
+        <div><dt>Tracking</dt><dd id="track">unknown</dd></div>
+      </dl>
+    </section>
+    <section class="consent">
+      <label><input type="checkbox" id="c-int" /> Collect interaction signals</label>
+      <label><input type="checkbox" id="c-gaze" /> Webcam gaze estimate (local)</label>
+      <label><input type="checkbox" id="c-ai" /> Send summaries to Gemini proxy</label>
+    </section>
+    <p class="fine">Webcam frames stay in the browser. Typed characters, passwords, and form values are not collected. Gaze is an estimate, not measured attention.</p>
+    <div class="row">
+      <button id="start">Start</button>
+      <button id="pause" class="ghost">Pause</button>
+      <button id="resume" class="ghost">Resume</button>
+      <button id="stop" class="danger">Stop</button>
+    </div>
+    <div class="row">
+      <button id="calibrate" class="ghost">Calibrate</button>
+      <button id="dash" class="ghost">Open console</button>
+    </div>
+    <p id="error" class="error" hidden></p>
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
