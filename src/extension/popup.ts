@@ -107,7 +107,9 @@ document.getElementById("stop")!.addEventListener("click", async () => {
   await refresh();
 });
 document.getElementById("calibrate")!.addEventListener("click", async () => {
-  await send("begin-calibration");
+  showError("");
+  const res = await send("begin-calibration");
+  if (!res?.ok) showError(res?.error ?? "Unable to start calibration");
 });
 document.getElementById("dash")!.addEventListener("click", async () => {
   try {

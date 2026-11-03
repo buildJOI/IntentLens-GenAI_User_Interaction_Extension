@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertContentScriptReadyAck,
   assertSessionControlAck,
+  buildContentScriptReadyAck,
   deliverSessionControlToTab,
   isMissingReceiverError,
   sendSessionControlWithAck,
@@ -19,6 +20,37 @@ describe("session control protocol", () => {
       version: "1.0.0"
     }
   };
+
+  it("echoes the requested session while the content script is ready but not collecting", () => {
+    const ack = buildContentScriptReadyAck(
+      { type: "content-script-ready", requestId: "ready-before-start", tabId: 77, sessionId: "sess-123" },
+      undefined,
+      false
+    );
+
+    expect(ack).toMatchObject({
+      type: "content-script-ready-ack",
+      requestId: "ready-before-start",
+      tabId: 77,
+      sessionId: "sess-123",
+      ok: true,
+      hasCollectors: false
+    });
+    expect(() => assertContentScriptReadyAck(ack, "ready-before-start", 77, "sess-123")).not.toThrow();
+  });
+
+  it("allows session-control to replace collectors from a previous session", () => {
+    const ack = buildContentScriptReadyAck(
+      { type: "content-script-ready", requestId: "ready-stale", tabId: 77, sessionId: "sess-123" },
+      "sess-old",
+      true
+    );
+
+    expect(ack.ok).toBe(true);
+    expect(ack.sessionId).toBe("sess-123");
+    expect(ack.activeSessionId).toBe("sess-old");
+    expect(() => assertContentScriptReadyAck(ack, "ready-stale", 77, "sess-123")).not.toThrow();
+  });
 
   it("accepts a successful content-script-ready acknowledgement", async () => {
     await expect(
@@ -201,6 +233,24 @@ describe("session control protocol", () => {
         error: "Nope"
       }, "match", "running")
     ).toThrow(/Stale session-control acknowledgement|Content script rejected/);
+  });
+
+  it("does not reinject when a receiver returns an invalid acknowledgement", async () => {
+    let injections = 0;
+    await expect(
+      deliverSessionControlToTab({
+        tabId: 12,
+        tabUrl: "https://example.com",
+        requestId: "invalid-ack",
+        session,
+        status: "running",
+        sendMessage: async () => ({ type: "unexpected" }),
+        inject: async () => {
+          injections += 1;
+        }
+      })
+    ).rejects.toThrow(/did not acknowledge/i);
+    expect(injections).toBe(0);
   });
 
   it("sends an acknowledgement with the matching request id", async () => {

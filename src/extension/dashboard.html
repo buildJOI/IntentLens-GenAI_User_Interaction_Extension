@@ -6,30 +6,42 @@
     <link rel="stylesheet" href="dashboard.css" />
   </head>
   <body>
-    <aside>
+    <aside class="sidebar">
       <div class="brand">
-        <div class="mark"></div>
+        <div class="mark"><span></span></div>
         <div>
           <strong>IntentLens</strong>
-          <span>Attention Intelligence Console</span>
+          <span>Attention intelligence</span>
         </div>
       </div>
       <nav>
-        <button data-panel="overview" class="active">Overview</button>
-        <button data-panel="events">Event inspector</button>
-        <button data-panel="attention">Attention</button>
-        <button data-panel="insights">AI insights</button>
-        <button data-panel="manage">Session</button>
+        <button data-panel="overview" class="active"><i>⌂</i><span>Dashboard</span></button>
+        <button data-panel="events"><i>⌁</i><span>Events</span></button>
+        <button data-panel="attention"><i>◉</i><span>Analytics</span></button>
+        <button data-panel="insights"><i>✦</i><span>AI insights</span></button>
+        <button data-panel="manage"><i>⚙</i><span>Settings</span></button>
       </nav>
       <div class="aside-note">
         Estimated gaze is not conscious attention. Findings are investigation hypotheses.
       </div>
     </aside>
     <main>
-      <header class="top">
+      <header class="topbar">
+        <div class="top-brand">
+          <div class="mark small"><span></span></div>
+          <strong>IntentLens</strong>
+        </div>
+        <div class="top-tabs" aria-hidden="true">
+          <span class="active">⌂ &nbsp; Dashboard</span>
+          <span>▥ &nbsp; Analytics</span>
+          <span>⚙ &nbsp; Settings</span>
+        </div>
+        <div id="session-pill" class="session-pill"><i></i><span>Session idle</span></div>
+      </header>
+      <header class="page-head">
         <div>
           <h1 id="panel-title">Session overview</h1>
-          <p id="panel-sub">Live state from local storage — never fabricated.</p>
+          <p id="panel-sub">Understand how attention shapes the experience.</p>
         </div>
         <div class="controls">
           <button id="start">Start</button>
@@ -38,9 +50,40 @@
           <button id="stop" class="danger">Stop</button>
         </div>
       </header>
+      <p id="action-status" class="action-status" hidden></p>
 
       <section id="overview" class="panel">
-        <div class="grid stats" id="stat-grid"></div>
+        <div class="overview-cards">
+          <article class="feature-card tracking-card">
+            <div class="metric-icon">◉</div>
+            <div><span>Gaze tracking</span><b id="hero-tracking">Idle</b></div>
+            <div class="sparkline spark-orange"></div>
+          </article>
+          <article class="feature-card events-card">
+            <div class="metric-icon purple">⌁</div>
+            <div><span>Events detected</span><b id="hero-events">0</b></div>
+            <div class="sparkline spark-purple"></div>
+          </article>
+          <article class="feature-card duration-card">
+            <div class="metric-icon">◷</div>
+            <div><span>Session duration</span><b id="hero-duration">00:00</b></div>
+            <div class="mini-bars"><i></i><i></i><i></i><i></i><i></i></div>
+          </article>
+        </div>
+        <div class="overview-lower">
+          <article class="timeline-card">
+            <div class="card-heading"><span><i></i> Activity timeline</span><small>Live⌄</small></div>
+            <canvas id="overview-timeline" width="900" height="180"></canvas>
+          </article>
+          <article class="score-card">
+            <div id="attention-ring" class="score-ring"><div><b id="attention-score">0%</b><span>Data coverage</span></div></div>
+            <p id="score-caption">Waiting for a session</p>
+          </article>
+        </div>
+        <details class="details-card">
+          <summary>Session diagnostics</summary>
+          <div class="grid stats" id="stat-grid"></div>
+        </details>
         <p class="muted" id="coverage-note"></p>
       </section>
 

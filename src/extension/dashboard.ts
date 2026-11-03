@@ -4,6 +4,24 @@ function send(type: string, payload?: unknown) {
   return chrome.runtime.sendMessage({ type, requestId: `${type}_${Date.now()}`, payload });
 }
 
+function showActionStatus(message: string, success = false): void {
+  const status = document.getElementById("action-status")!;
+  status.hidden = !message;
+  status.textContent = message;
+  status.classList.toggle("success", success);
+}
+
+async function requestHostPermission(): Promise<boolean> {
+  try {
+    return await chrome.permissions.request({
+      origins: ["http://*/*", "https://*/*"]
+    });
+  } catch (error) {
+    showActionStatus(error instanceof Error ? error.message : "Unable to request page access.");
+    return false;
+  }
+}
+
 const panels = ["overview", "events", "attention", "insights", "manage"];
 const titles: Record<string, string> = {
   overview: "Session overview",
@@ -43,11 +61,29 @@ async function refresh(): Promise<void> {
 }
 
 function renderStats(session: Record<string, unknown>, metrics: Record<string, unknown>): void {
+  const calibration = session.calibration as { status?: string; notes?: string[] } | undefined;
+  const elapsedSeconds = Math.round(getElapsedMs(session as any) / 1000);
+  const coverage = Math.max(0, Math.min(100, Math.round(Number(metrics.dataCoverage ?? 0) * 100)));
+  const isRunning = session.status === "running";
+  const hasGaze = Number(metrics.validGazeSamples ?? 0) > 0;
+  const trackingLabel = hasGaze ? "Active" : isRunning ? "Starting" : "Idle";
+  document.getElementById("hero-tracking")!.textContent = trackingLabel;
+  document.getElementById("hero-events")!.textContent = String(metrics.eventCount ?? 0);
+  document.getElementById("hero-duration")!.textContent = formatDuration(elapsedSeconds);
+  document.getElementById("attention-score")!.textContent = `${coverage}%`;
+  document.getElementById("score-caption")!.textContent = hasGaze
+    ? "Valid mapped gaze coverage"
+    : isRunning ? "Collecting session signals" : "Waiting for a session";
+  document.getElementById("attention-ring")!.style.setProperty("--score", String(coverage));
+  const pill = document.getElementById("session-pill")!;
+  pill.classList.toggle("live", isRunning);
+  pill.querySelector("span")!.textContent = isRunning ? "Active session" : `Session ${String(session.status ?? "idle")}`;
+  drawOverviewTimeline((metrics.timeline as Array<{ t: number; type: string }> | undefined) ?? []);
   const items = [
     ["Status", session.status],
-    ["Elapsed", session.startedAt || session.status === "running" ? `${Math.round(getElapsedMs(session as any) / 1000)}s` : "0s"],
+    ["Elapsed", `${elapsedSeconds}s`],
     ["Collection", session.status === "running" ? "active" : "inactive"],
-    ["Calibration", (session.calibration as { status?: string })?.status ?? "not_started"],
+    ["Calibration", calibration?.status ?? "not_started"],
     ["Tracking quality", metrics.trackingQuality],
     ["Events", metrics.eventCount],
     ["Valid gaze samples", metrics.validGazeSamples],
@@ -56,12 +92,62 @@ function renderStats(session: Record<string, unknown>, metrics: Record<string, u
     ["Data coverage", `${Math.round(Number(metrics.dataCoverage ?? 0) * 100)}% of expected samples`],
     ["Max scroll depth", `${Math.round(Number(metrics.maxScrollDepth ?? 0) * 100)}%`]
   ];
+  if (calibration?.status === "failed" && calibration.notes?.length) {
+    items.push(["Calibration error", calibration.notes.join(" ")]);
+  }
   document.getElementById("stat-grid")!.innerHTML = items
     .map(([k, v]) => `<article class="stat"><span>${k}</span><b>${String(v)}</b></article>`)
     .join("");
   document.getElementById("coverage-note")!.textContent = Array.isArray(metrics.notes)
     ? metrics.notes.join(" ")
     : "";
+}
+
+function formatDuration(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function drawOverviewTimeline(timeline: Array<{ t: number; type: string }>): void {
+  const canvas = document.getElementById("overview-timeline") as HTMLCanvasElement;
+  const ctx = canvas.getContext("2d")!;
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  const gradient = ctx.createLinearGradient(0, 0, width, 0);
+  gradient.addColorStop(0, "#ff8a3d");
+  gradient.addColorStop(.52, "#b968ff");
+  gradient.addColorStop(1, "#ff8a3d");
+  ctx.strokeStyle = "rgba(255,255,255,.06)";
+  ctx.lineWidth = 1;
+  for (let y = 40; y < height; y += 40) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+  }
+  const points = timeline.filter((item) => item.type !== "gaze_sample").slice(-14);
+  if (!points.length) {
+    ctx.strokeStyle = "rgba(255,138,61,.35)";
+    ctx.beginPath(); ctx.moveTo(0, height * .68); ctx.lineTo(width, height * .68); ctx.stroke();
+    return;
+  }
+  const minT = points[0].t;
+  const range = Math.max(1, points[points.length - 1].t - minT);
+  ctx.strokeStyle = gradient; ctx.lineWidth = 2; ctx.beginPath();
+  points.forEach((point, index) => {
+    const x = ((point.t - minT) / range) * (width - 40) + 20;
+    const y = height * (.68 - ((index * 37) % 5) * .07);
+    if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  points.forEach((point, index) => {
+    const x = ((point.t - minT) / range) * (width - 40) + 20;
+    const y = height * (.68 - ((index * 37) % 5) * .07);
+    ctx.fillStyle = index % 3 === 1 ? "#b968ff" : "#ff8a3d";
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+  });
 }
 
 function renderEvents(events: IntentEvent[]): void {
@@ -205,12 +291,29 @@ document.getElementById("event-search")!.addEventListener("input", () => void re
 filter.addEventListener("change", () => void refresh());
 
 document.getElementById("start")!.addEventListener("click", async () => {
-  await send("set-consent", {
+  showActionStatus("");
+  // Keep the permission request as the first awaited operation so Chrome still
+  // associates it with this button click's user gesture.
+  const granted = await requestHostPermission();
+  if (!granted) {
+    showActionStatus("Page access permission is required. Click Start and choose Allow.");
+    return;
+  }
+  const consent = await send("set-consent", {
     interactionCollection: (document.getElementById("c-int") as HTMLInputElement).checked,
     webcamGaze: (document.getElementById("c-gaze") as HTMLInputElement).checked,
     aiAnalysis: (document.getElementById("c-ai") as HTMLInputElement).checked
   });
-  await send("start-session");
+  if (!consent?.ok) {
+    showActionStatus(consent?.error ?? "Unable to save consent.");
+    return;
+  }
+  const result = await send("start-session");
+  if (!result?.ok) {
+    showActionStatus(result?.error ?? "Unable to start the session.");
+    return;
+  }
+  showActionStatus("Collection started on the active webpage.", true);
   await refresh();
 });
 document.getElementById("pause")!.addEventListener("click", async () => {

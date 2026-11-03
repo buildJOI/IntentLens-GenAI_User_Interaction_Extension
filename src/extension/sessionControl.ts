@@ -30,9 +30,34 @@ export interface ContentScriptReadyAck {
   requestId: string;
   tabId: number;
   sessionId: string;
+  activeSessionId?: string;
   ok: boolean;
   hasCollectors: boolean;
   error?: string;
+}
+
+export function buildContentScriptReadyAck(
+  request: Pick<ContentScriptReadyRequest, "type" | "requestId" | "sessionId" | "tabId">,
+  activeSessionId: string | undefined,
+  hasCollectors: boolean
+): ContentScriptReadyAck {
+  const requestedSessionId = request.sessionId || "";
+  const currentSessionId = activeSessionId || "";
+
+  return {
+    type: "content-script-ready-ack",
+    requestId: request.requestId,
+    tabId: request.tabId,
+    // Before collection starts there is no active content-side session yet.
+    // Echo the requested id so the background can verify this acknowledgement.
+    // Readiness only establishes that the receiver is alive. Session-control
+    // performs the actual transition and replaces any previous collectors.
+    sessionId: requestedSessionId || currentSessionId,
+    activeSessionId: currentSessionId || undefined,
+    ok: true,
+    hasCollectors,
+    error: undefined
+  };
 }
 
 export interface SessionControlDeliveryOptions {
@@ -210,6 +235,9 @@ export async function deliverSessionControlToTab({
     }
     if (!tabUrl) {
       throw new Error(`Page navigation interrupted session-control delivery for ${status} on tab ${tabId}.`);
+    }
+    if (!isMissingReceiverError(error)) {
+      throw new Error(`Content script did not acknowledge ${status} on tab ${tabId}: ${original}`);
     }
     if (inject) {
       try {

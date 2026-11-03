@@ -52,6 +52,10 @@ export function startSession(session: SessionRecord, now = Date.now()): SessionR
     ...session,
     status: "running",
     startedAt: now,
+    // A stopped/idle session may retain the timestamp of its final event.
+    // Keeping it makes recoverInterrupted() immediately pause a fresh restart
+    // when that event is older than its 30-second health window.
+    lastEventAt: undefined,
     pausedAt: undefined,
     stoppedAt: undefined,
     activeMs: session.status === "stopped" || session.status === "idle" ? 0 : session.activeMs ?? 0

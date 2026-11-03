@@ -34,6 +34,7 @@ import { parseGeminiInsight } from "../core/gemini/schema.js";
 import {
   assertSessionControlAck,
   deliverSessionControlToTab,
+  isMissingReceiverError,
   waitForContentScriptReady,
   type SessionControlRequest
 } from "./sessionControl.js";
@@ -196,8 +197,31 @@ async function handleMessage(raw: unknown, sender: chrome.runtime.MessageSender)
       return { ok: true };
     }
     case "begin-calibration": {
-      await broadcastControl({ type: "session-control", status: "running" } as never, "running");
-      return { ok: true };
+      if (state.session.status !== "running") {
+        return { ok: false, error: "Start a session before calibration." };
+      }
+      if (!state.session.consent.webcamGaze) {
+        return { ok: false, error: "Enable webcam gaze before calibration." };
+      }
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id || isUnsupportedUrl(tab.url)) {
+        return { ok: false, error: "Open a normal HTTP or HTTPS page before calibration." };
+      }
+      try {
+        const response = await chrome.tabs.sendMessage(tab.id, {
+          type: "begin-calibration",
+          requestId: message.requestId
+        });
+        if (!response?.ok) {
+          return { ok: false, error: response?.error ?? "The page could not start calibration." };
+        }
+        return { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : "Unable to reach the active page for calibration."
+        };
+      }
     }
     case "calibration-progress": {
       const session = {
@@ -342,6 +366,7 @@ async function waitForTabReady(tabId: number, sessionId: string): Promise<void> 
     logDiagnostic("ready:ack:accepted", {
       tabId,
       sessionId: ready.sessionId,
+      activeSessionId: ready.activeSessionId,
       requestId: ready.requestId,
       hasCollectors: ready.hasCollectors
     });
@@ -364,33 +389,43 @@ async function injectActiveTab(sessionId: string): Promise<void> {
   }
 
   const origin = sanitizeTabUrl(tab.url);
-  logDiagnostic("inject:start", { tabId: tab.id, url: origin, sessionId, files: ["content.js"] });
-
+  let receiverReady = false;
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ["content.js"]
-    });
-    logDiagnostic("inject:resolved", {
-      tabId: tab.id,
-      sessionId,
-      url: origin,
-      resultCount: Array.isArray(results) ? results.length : 0,
-      frameId: results?.[0]?.frameId,
-      documentId: results?.[0]?.documentId
-    });
+    await waitForTabReady(tab.id, sessionId);
+    receiverReady = true;
+    logDiagnostic("inject:skipped", { tabId: tab.id, url: origin, sessionId, reason: "receiver-already-ready" });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logDiagnostic("inject:rejected", {
-      tabId: tab.id,
-      sessionId,
-      url: origin,
-      error: message
-    });
-    throw error;
+    if (!isMissingReceiverError(error)) throw error;
   }
 
-  await waitForTabReady(tab.id, sessionId);
+  if (!receiverReady) {
+    logDiagnostic("inject:start", { tabId: tab.id, url: origin, sessionId, files: ["content.js"] });
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content.js"]
+      });
+      logDiagnostic("inject:resolved", {
+        tabId: tab.id,
+        sessionId,
+        url: origin,
+        resultCount: Array.isArray(results) ? results.length : 0,
+        frameId: results?.[0]?.frameId,
+        documentId: results?.[0]?.documentId
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logDiagnostic("inject:rejected", {
+        tabId: tab.id,
+        sessionId,
+        url: origin,
+        error: message
+      });
+      throw error;
+    }
+
+    await waitForTabReady(tab.id, sessionId);
+  }
 
   const { session } = await loadState();
   const requestId = `session-control-${sessionId}-running`;

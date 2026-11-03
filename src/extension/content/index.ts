@@ -4,6 +4,7 @@ import { elementAtPoint } from "./element.js";
 import { makeEvent, qualityFromHealth, type SessionContext } from "./factory.js";
 import { calibrationUi, ensureOverlay, setIndicator } from "./overlay.js";
 import { GAZE_SOURCE, type GazeFrameMessage } from "../gaze/protocol.js";
+import { buildContentScriptReadyAck } from "../sessionControl.js";
 
 declare global {
   interface Window {
@@ -39,6 +40,15 @@ let lastGazeTime = 0;
 let missingWindow = 0;
 let totalWindow = 0;
 let calibrationStatus: CalibrationStatus = "not_started";
+let gazeTrackingReady = false;
+const gazeReadyWaiters = new Set<{
+  resolve: () => void;
+  reject: (error: Error) => void;
+}>();
+const validGazeWaiters = new Set<{
+  resolve: () => void;
+  reject: (error: Error) => void;
+}>();
 
 const queue = new BatchQueue<IntentEvent>(20, 400, (items) => {
   void chrome.runtime.sendMessage({
@@ -97,7 +107,7 @@ function stopCollection(): void {
 function mountGazeFrame(): void {
   if (gazeFrame) return;
   gazeFrame = document.createElement("iframe");
-  gazeFrame.src = chrome.runtime.getURL("gaze-frame.html");
+  gazeFrame.src = chrome.runtime.getURL("gaze-host.html");
   gazeFrame.allow = "camera; microphone";
   gazeFrame.style.cssText =
     "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;border:0;bottom:0;left:0;";
@@ -109,8 +119,16 @@ window.addEventListener("message", (event) => {
   if (!data || data.source !== GAZE_SOURCE) return;
   const session = ctx;
   if (!session) return;
+  if (data.kind === "tracking-ready") {
+    gazeTrackingReady = true;
+    for (const waiter of gazeReadyWaiters) waiter.resolve();
+    gazeReadyWaiters.clear();
+    return;
+  }
   if (data.kind === "denied") {
     calibrationStatus = "denied";
+    rejectGazeReadyWaiters(new Error("Camera permission was denied."));
+    rejectValidGazeWaiters(new Error("Camera permission was denied."));
     emit(
       makeEvent(session, "tracking_quality", {
         quality: qualityFromHealth(true, "denied", "low"),
@@ -120,6 +138,8 @@ window.addEventListener("message", (event) => {
     return;
   }
   if (data.kind === "unavailable") {
+    rejectGazeReadyWaiters(new Error(`Gaze tracking is unavailable: ${data.reason}`));
+    rejectValidGazeWaiters(new Error(`Gaze tracking is unavailable: ${data.reason}`));
     emit(
       makeEvent(session, "tracking_quality", {
         quality: qualityFromHealth(true, "failed", "low"),
@@ -131,6 +151,10 @@ window.addEventListener("message", (event) => {
   if (data.kind === "sample") {
     totalWindow += 1;
     if (data.missing) missingWindow += 1;
+    if (!data.missing) {
+      for (const waiter of validGazeWaiters) waiter.resolve();
+      validGazeWaiters.clear();
+    }
     lastGazeAt = Date.now();
     const el = data.missing ? undefined : elementAtPoint(data.x, data.y);
     if (el) {
@@ -245,11 +269,43 @@ async function runCalibration(): Promise<void> {
       console.info("IntentLens: calibration target click triggered start request");
       gazeFrame?.contentWindow?.postMessage({ source: GAZE_SOURCE, kind: "start" }, "*");
     });
+    if (i === 0) {
+      try {
+        await waitForGazeTrackingReady();
+      } catch (error) {
+        ui.hide();
+        calibrationStatus = "failed";
+        setIndicator("running");
+        const message = error instanceof Error ? error.message : "Gaze tracking failed to start.";
+        void chrome.runtime.sendMessage({
+          type: "calibration-progress",
+          requestId: "cal_failed",
+          payload: { status: "failed", notes: [message] }
+        });
+        throw error;
+      }
+    }
     if (!hold) {
       gazeFrame?.contentWindow?.postMessage(
         { source: GAZE_SOURCE, kind: "calibrate", x: point.x, y: point.y },
         "*"
       );
+      if (i === 0) {
+        try {
+          await waitForValidGazeSample();
+        } catch (error) {
+          ui.hide();
+          calibrationStatus = "failed";
+          setIndicator("running");
+          const message = error instanceof Error ? error.message : "No valid gaze prediction was produced.";
+          void chrome.runtime.sendMessage({
+            type: "calibration-progress",
+            requestId: "cal_prediction_failed",
+            payload: { status: "failed", notes: [message] }
+          });
+          throw error;
+        }
+      }
     } else {
       errors.push(Math.hypot(point.predX - point.x, point.predY - point.y));
     }
@@ -286,6 +342,65 @@ async function runCalibration(): Promise<void> {
       ]
     }
   });
+}
+
+function waitForGazeTrackingReady(timeoutMs = 20_000): Promise<void> {
+  if (gazeTrackingReady) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      resolve: () => {
+        clearTimeout(timer);
+        gazeReadyWaiters.delete(waiter);
+        resolve();
+      },
+      reject: (error: Error) => {
+        clearTimeout(timer);
+        gazeReadyWaiters.delete(waiter);
+        reject(error);
+      }
+    };
+    const timer = window.setTimeout(
+      () => waiter.reject(new Error("Camera and gaze model did not become ready within 20 seconds.")),
+      timeoutMs
+    );
+    gazeReadyWaiters.add(waiter);
+  });
+}
+
+function rejectGazeReadyWaiters(error: Error): void {
+  for (const waiter of gazeReadyWaiters) waiter.reject(error);
+  gazeReadyWaiters.clear();
+}
+
+function waitForValidGazeSample(timeoutMs = 5_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      resolve: () => {
+        clearTimeout(timer);
+        validGazeWaiters.delete(waiter);
+        resolve();
+      },
+      reject: (error: Error) => {
+        clearTimeout(timer);
+        validGazeWaiters.delete(waiter);
+        reject(error);
+      }
+    };
+    const timer = window.setTimeout(
+      () => waiter.reject(
+        new Error(
+          "Camera started, but no valid face/gaze prediction was produced within 5 seconds. Center your face, improve lighting, and keep the camera unobstructed."
+        )
+      ),
+      timeoutMs
+    );
+    validGazeWaiters.add(waiter);
+  });
+}
+
+function rejectValidGazeWaiters(error: Error): void {
+  for (const waiter of validGazeWaiters) waiter.reject(error);
+  validGazeWaiters.clear();
 }
 
 function waitClick(target: HTMLButtonElement, onGesture?: () => void): Promise<{ x: number; y: number; predX: number; predY: number }> {
@@ -387,17 +502,13 @@ try {
       const requestId = String(message.requestId ?? `content-ready-${Date.now()}`);
       const tabId = Number(message.tabId ?? 0);
       const sessionId = String(message.sessionId ?? ctx?.sessionId ?? "");
-      const expectedSessionId = ctx?.sessionId ?? "";
-      const matchedSession = !sessionId || !expectedSessionId || sessionId === expectedSessionId;
-      sendResponse({
-        type: "content-script-ready-ack",
-        requestId,
-        tabId,
-        sessionId: expectedSessionId,
-        ok: matchedSession,
-        hasCollectors: !!detachCollectors,
-        error: matchedSession ? undefined : `Session mismatch: expected ${expectedSessionId}, received ${sessionId}`
-      });
+      sendResponse(
+        buildContentScriptReadyAck(
+          { type: "content-script-ready", requestId, tabId, sessionId },
+          ctx?.sessionId,
+          !!detachCollectors
+        )
+      );
       return true;
     }
 

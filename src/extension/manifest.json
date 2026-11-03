@@ -22,7 +22,7 @@
   "host_permissions": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"],
   "web_accessible_resources": [
     {
-      "resources": ["gaze-frame.html", "gaze-frame.js", "vendor/webgazer.js", "overlay.css"],
+      "resources": ["gaze-host.html", "gaze-host.js", "gaze-frame.html", "gaze-frame.js", "vendor/webgazer.js", "mediapipe/*", "mediapipe/face_mesh/*", "overlay.css"],
       "matches": ["http://*/*", "https://*/*"]
     }
   ],
@@ -33,6 +33,10 @@
     "128": "icons/icon128.png"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://127.0.0.1:8787 http://localhost:8787"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://127.0.0.1:8787 http://localhost:8787",
+    "sandbox": "sandbox allow-scripts allow-forms allow-modals; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; worker-src 'self' blob:; child-src 'self'; connect-src 'self';"
+  },
+  "sandbox": {
+    "pages": ["gaze-frame.html"]
   }
 }

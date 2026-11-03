@@ -57,4 +57,21 @@ describe("session lifecycle", () => {
     expect(resumed.status).toBe("running");
     expect(resumed.consent.interactionCollection).toBe(true);
   });
+
+  it("does not recover a fresh restart as paused because of a stale previous event", () => {
+    const now = 1_000_000;
+    let session = grantConsent(createSession(), { interactionCollection: true, webcamGaze: true });
+    session = {
+      ...session,
+      status: "stopped",
+      stoppedAt: now - 60_000,
+      lastEventAt: now - 120_000,
+      activeMs: 37_000
+    };
+
+    const restarted = startSession(session, now);
+    expect(restarted.status).toBe("running");
+    expect(restarted.lastEventAt).toBeUndefined();
+    expect(recoverInterrupted(restarted, now + 1_000).status).toBe("running");
+  });
 });
